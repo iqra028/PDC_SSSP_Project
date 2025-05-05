@@ -249,6 +249,7 @@ void printSSSP(const SSSPTree& tree) {
     }
 }
 
+
 int main(int argc, char* argv[]) {
     if (argc != 4) {
         cerr << "Usage: " << argv[0] << " <graph_file> <changes_file> <source_vertex>" << endl;
@@ -282,6 +283,23 @@ int main(int argc, char* argv[]) {
     
     cout << "\nUpdated SSSP Tree:" << endl;
     printSSSP(initialTree);
+    ofstream outfile("output.txt");
+if (!outfile.is_open()) {
+    cerr << "Could not open output.txt for writing\n";
+    return 1;
+}
+
+outfile << "Vertex\tDistance\tParent\n";
+for (int i = 0; i < initialTree.Dist.size(); ++i) {
+    outfile << i << "\t";
+    if (initialTree.Dist[i] < INF) {
+        outfile << initialTree.Dist[i] << "\t";
+    } else {
+        outfile << "INF\t";
+    }
+    outfile << initialTree.Parent[i] << "\n";
+}
+
     
     cout << "\nUpdate time: " << (end - start) << " seconds" << endl;
     
