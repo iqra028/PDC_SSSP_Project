@@ -1,0 +1,12 @@
+Performance Metrics:
+Total Execution Time: 0 seconds
+Initialization Time: 0.0544584 seconds
+I/O Time: 0.164057 seconds
+Affected Vertices Identification Time: 2.21e-07 seconds
+Update Time: 0.000574265 seconds
+Speedup (compared to serial): 1
+Breakdown:
+  - Initialization: inf%
+  - I/O: inf%
+  - Identify Affected: inf%
+  - Update: inf%

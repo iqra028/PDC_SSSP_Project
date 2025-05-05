@@ -1,0 +1,11 @@
+Performance Metrics (both):
+Total Execution Time: 0.20974 seconds
+Initialization Time: 0.0531166 seconds
+I/O Time: 0.148953 seconds
+Affected Vertices Identification Time: 1.882e-06 seconds
+Update Time: 0.000244278 seconds
+  - Synchronous: 0.000244619 seconds
+  - Asynchronous: 0.000244278 seconds
+Speedup: 1.38617x
+Number of Threads: 16
+Update Method: both

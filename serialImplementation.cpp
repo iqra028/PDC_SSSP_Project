@@ -11,6 +11,16 @@ using namespace std;
 const float INF = numeric_limits<float>::max();
 const float EPSILON = 1e-6; 
 
+// Performance metrics structure
+struct PerformanceMetrics {
+    double total_time = 0.0;
+    double init_time = 0.0;
+    double identify_time = 0.0;
+    double update_time = 0.0;
+    double io_time = 0.0;
+    double speedup = 1.0; // Will be 1.0 for serial execution
+};
+
 struct Edge {
     int u, v;
     float weight;
@@ -85,14 +95,20 @@ void processSingleChange(Graph& g, SSSPTree& tree, const Edge& change) {
 }
 
 // ---------------------- Algorithm 2: Identify Affected Vertices ----------------------
-void identifyAffectedVertices(Graph& g, SSSPTree& tree, const vector<Edge>& changes) {
+void identifyAffectedVertices(Graph& g, SSSPTree& tree, const vector<Edge>& changes, PerformanceMetrics& metrics) {
+    double start = omp_get_wtime();
+    
     for (const auto& change : changes) {
         processSingleChange(g, tree, change);
     }
+    
+    double end = omp_get_wtime();
+    metrics.identify_time = end - start;
 }
 
 // ---------------------- Algorithm 3: Synchronous Update ----------------------
-void updateAffectedVertices(const Graph& g, SSSPTree& tree) {
+void updateAffectedVertices(const Graph& g, SSSPTree& tree, PerformanceMetrics& metrics) {
+    double start = omp_get_wtime();
     bool changed;
     
     do {
@@ -152,10 +168,15 @@ void updateAffectedVertices(const Graph& g, SSSPTree& tree) {
             }
         }
     } while (changed);
+    
+    double end = omp_get_wtime();
+    metrics.update_time = end - start;
 }
 
 // ---------------------- Helper Functions ----------------------
-Graph readGraph(const string& filename) {
+Graph readGraph(const string& filename, PerformanceMetrics& metrics) {
+    double start = omp_get_wtime();
+    
     ifstream file(filename);
     if (!file.is_open()) {
         cerr << "Error opening file: " << filename << endl;
@@ -178,10 +199,15 @@ Graph readGraph(const string& filename) {
     }
     
     file.close();
+    
+    double end = omp_get_wtime();
+    metrics.io_time += (end - start);
     return g;
 }
 
-vector<Edge> readChanges(const string& filename) {
+vector<Edge> readChanges(const string& filename, PerformanceMetrics& metrics) {
+    double start = omp_get_wtime();
+    
     ifstream file(filename);
     if (!file.is_open()) {
         cerr << "Error opening file: " << filename << endl;
@@ -201,10 +227,15 @@ vector<Edge> readChanges(const string& filename) {
     }
     
     file.close();
+    
+    double end = omp_get_wtime();
+    metrics.io_time += (end - start);
     return changes;
 }
 
-SSSPTree initSSSP(const Graph& g, int source) {
+SSSPTree initSSSP(const Graph& g, int source, PerformanceMetrics& metrics) {
+    double start = omp_get_wtime();
+    
     SSSPTree tree;
     tree.Parent.resize(g.V, -1);
     tree.Dist.resize(g.V, INF);
@@ -233,22 +264,52 @@ SSSPTree initSSSP(const Graph& g, int source) {
         }
     }
     
+    double end = omp_get_wtime();
+    metrics.init_time = end - start;
     return tree;
 }
 
-void printSSSP(const SSSPTree& tree) {
-    cout << "Vertex\tDistance\tParent" << endl;
-    for (int i = 0; i < tree.Parent.size(); ++i) {
-        cout << i << "\t";
-        if (tree.Dist[i] == INF) {
-            cout << "INF";
-        } else {
-            cout << tree.Dist[i];
-        }
-        cout << "\t\t" << tree.Parent[i] << endl;
+void saveResults(const SSSPTree& tree, PerformanceMetrics& metrics) {
+    double start = omp_get_wtime();
+    
+    ofstream outfile("output.txt");
+    if (!outfile.is_open()) {
+        cerr << "Could not open output.txt for writing\n";
+        return;
     }
-}
 
+    outfile << "Vertex\tDistance\tParent\n";
+    for (int i = 0; i < tree.Dist.size(); ++i) {
+        outfile << i << "\t";
+        if (tree.Dist[i] < INF) {
+            outfile << tree.Dist[i] << "\t";
+        } else {
+            outfile << "INF\t";
+        }
+        outfile << tree.Parent[i] << "\n";
+    }
+    
+    // Save performance metrics to a separate file
+    ofstream metrics_file("performance_metrics.txt");
+    if (metrics_file.is_open()) {
+        metrics_file << "Performance Metrics:\n";
+        metrics_file << "Total Execution Time: " << metrics.total_time << " seconds\n";
+        metrics_file << "Initialization Time: " << metrics.init_time << " seconds\n";
+        metrics_file << "I/O Time: " << metrics.io_time << " seconds\n";
+        metrics_file << "Affected Vertices Identification Time: " << metrics.identify_time << " seconds\n";
+        metrics_file << "Update Time: " << metrics.update_time << " seconds\n";
+        metrics_file << "Speedup (compared to serial): " << metrics.speedup << "\n";
+        metrics_file << "Breakdown:\n";
+        metrics_file << "  - Initialization: " << (metrics.init_time / metrics.total_time * 100) << "%\n";
+        metrics_file << "  - I/O: " << (metrics.io_time / metrics.total_time * 100) << "%\n";
+        metrics_file << "  - Identify Affected: " << (metrics.identify_time / metrics.total_time * 100) << "%\n";
+        metrics_file << "  - Update: " << (metrics.update_time / metrics.total_time * 100) << "%\n";
+        metrics_file.close();
+    }
+    
+    double end = omp_get_wtime();
+    metrics.io_time += (end - start);
+}
 
 int main(int argc, char* argv[]) {
     if (argc != 4) {
@@ -256,52 +317,49 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    PerformanceMetrics metrics;
+    double program_start = omp_get_wtime();
+    
     string graphFile = argv[1];
     string changesFile = argv[2];
     int source = stoi(argv[3]);
     
     // Read input
-    Graph g = readGraph(graphFile);
-    vector<Edge> changes = readChanges(changesFile);
+    Graph g = readGraph(graphFile, metrics);
+    vector<Edge> changes = readChanges(changesFile, metrics);
     
     // Initialize SSSP tree
-    SSSPTree initialTree = initSSSP(g, source);
-    
-    cout << "Initial SSSP Tree:" << endl;
-    printSSSP(initialTree);
+    SSSPTree initialTree = initSSSP(g, source, metrics);
     
     // Update SSSP
-    double start = omp_get_wtime();
-    
     // Algorithm 2: Identify affected vertices
-    identifyAffectedVertices(g, initialTree, changes);
+    identifyAffectedVertices(g, initialTree, changes, metrics);
     
     // Algorithm 3: Synchronous update
-    updateAffectedVertices(g, initialTree);
+    updateAffectedVertices(g, initialTree, metrics);
     
-    double end = omp_get_wtime();
+    // Save results
+    saveResults(initialTree, metrics);
     
-    cout << "\nUpdated SSSP Tree:" << endl;
-    printSSSP(initialTree);
-    ofstream outfile("output.txt");
-if (!outfile.is_open()) {
-    cerr << "Could not open output.txt for writing\n";
-    return 1;
-}
-
-outfile << "Vertex\tDistance\tParent\n";
-for (int i = 0; i < initialTree.Dist.size(); ++i) {
-    outfile << i << "\t";
-    if (initialTree.Dist[i] < INF) {
-        outfile << initialTree.Dist[i] << "\t";
-    } else {
-        outfile << "INF\t";
-    }
-    outfile << initialTree.Parent[i] << "\n";
-}
-
+    double program_end = omp_get_wtime();
+    metrics.total_time = program_end - program_start;
     
-    cout << "\nUpdate time: " << (end - start) << " seconds" << endl;
+    // For serial execution, speedup is 1.0 (baseline)
+    metrics.speedup = 1.0;
+    
+    // Print summary to console
+    cout << "\nPerformance Summary:\n";
+    cout << "Total Execution Time: " << metrics.total_time << " seconds\n";
+    cout << "Breakdown:\n";
+    cout << "  - Initialization: " << metrics.init_time << "s (" 
+         << (metrics.init_time / metrics.total_time * 100) << "%)\n";
+    cout << "  - I/O Operations: " << metrics.io_time << "s (" 
+         << (metrics.io_time / metrics.total_time * 100) << "%)\n";
+    cout << "  - Identify Affected Vertices: " << metrics.identify_time << "s (" 
+         << (metrics.identify_time / metrics.total_time * 100) << "%)\n";
+    cout << "  - Update Affected Vertices: " << metrics.update_time << "s (" 
+         << (metrics.update_time / metrics.total_time * 100) << "%)\n";
+    cout <<"  - Speed up:"<<metrics.speedup;
     
     return 0;
 }
